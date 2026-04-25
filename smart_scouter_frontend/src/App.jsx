@@ -139,7 +139,96 @@ export default function App() {
   const [isHist, setIsHist] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedPlayerForReport, setSelectedPlayerForReport] = useState(null);
-  const [compareMode, setCompareMode] = useState('between'); // Fix pentru Compare Mode
+  const [compareMode, setCompareMode] = useState('between');
+
+  const allPlayers = [
+    { id: 1, name: "CLAUDIU PETRILA", club: "CFR CLUJ", age: 23, position: "LW", countryCode: "RO", value: "3.5M €", valNum: 3500000, match: 92, foot: "left", goals: 12, assists: 7, matchesPlayed: 24 },
+    { id: 2, name: "ABDUR AYUBA", club: "ACCRA LIONS", age: 19, position: "ST", countryCode: "GH", value: "800K €", valNum: 800000, match: 88, foot: "right", goals: 15, assists: 3, matchesPlayed: 22 },
+    { id: 3, name: "VINICIUS JR", club: "REAL MADRID", age: 23, position: "LW", countryCode: "BR", value: "150M €", valNum: 150000000, match: 99, foot: "right", goals: 22, assists: 11, matchesPlayed: 30 },
+    { id: 4, name: "LOUIS MUNTEANU", club: "FARUL", age: 21, position: "CF", countryCode: "RO", value: "2.0M €", valNum: 2000000, match: 84, foot: "both", goals: 10, assists: 4, matchesPlayed: 26 },
+    { id: 5, name: "DARIUS OLARU", club: "FCSB", age: 26, position: "CM", countryCode: "RO", value: "6.5M €", valNum: 6500000, match: 87, foot: "right", goals: 11, assists: 9, matchesPlayed: 28 },
+  ];
+
+  const [watchlistData, setWatchlistData] = useState([
+    { player: allPlayers[0], folder: "Atacanți", isPinned: false },
+    { player: allPlayers[1], folder: "Atacanți", isPinned: false },
+    { player: allPlayers[2], folder: "General", isPinned: false },
+    { player: allPlayers[3], folder: "Mijlocași", isPinned: false },
+    { player: allPlayers[4], folder: "Mijlocași", isPinned: false },
+  ]);
+
+  const [folders, setFolders] = useState(["Atacanți", "Mijlocași", "General"]);
+  const [selectedFolder, setSelectedFolder] = useState("ALL");
+  const [folderSearch, setFolderSearch] = useState("");
+  const [isFolderListOpen, setIsFolderListOpen] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState(null);
+  const [playerToSave, setPlayerToSave] = useState(null);
+  const [newFolderMode, setNewFolderMode] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [moveCopyConfig, setMoveCopyConfig] = useState(null);
+  const [player1Id, setPlayer1Id] = useState(1);
+  const [player2Id, setPlayer2Id] = useState(2);
+
+  const p1 = allPlayers.find(p => p.id === Number(player1Id)) || allPlayers[0];
+  const p2 = allPlayers.find(p => p.id === Number(player2Id)) || allPlayers[1];
+
+  const handlePinToggle = (playerId, folder) => {
+    setWatchlistData(prev => prev.map(i =>
+      i.player.id === playerId && i.folder === folder ? { ...i, isPinned: !i.isPinned } : i
+    ));
+  };
+
+  const handleSaveFolder = (folder) => {
+    if (!watchlistData.find(i => i.player.id === playerToSave.id && i.folder === folder)) {
+      setWatchlistData(prev => [...prev, { player: playerToSave, folder, isPinned: false }]);
+    }
+    setPlayerToSave(null);
+    setNewFolderMode(false);
+  };
+
+  const finalizeMoveCopy = (deleteFromSource) => {
+    if (!moveCopyConfig) return;
+    const { player, currentFolder, targetFolder } = moveCopyConfig;
+    if (!watchlistData.find(i => i.player.id === player.id && i.folder === targetFolder)) {
+      setWatchlistData(prev => [...prev, { player, folder: targetFolder, isPinned: false }]);
+    }
+    if (deleteFromSource) {
+      setWatchlistData(prev => prev.filter(i => !(i.player.id === player.id && i.folder === currentFolder)));
+    }
+    setMoveCopyConfig(null);
+  };
+
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'ai', text: 'Salut! Am analizat ultimele meciuri. Iată ce profile de jucători s-ar potrivi sistemului U Cluj.' }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  const sendMessage = async () => {
+    const msg = chatInput.trim();
+    if (!msg || isChatLoading) return;
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', text: msg }]);
+    setIsChatLoading(true);
+    try {
+      const res = await fetch('http://localhost:8000/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg }),
+      });
+      const data = await res.json();
+      setChatMessages(prev => [...prev, { role: 'ai', text: data.response }]);
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'ai', text: 'Eroare: nu pot contacta serverul AI. Asigură-te că backend-ul rulează pe portul 8000.' }]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
   const [tempPos, setTempPos] = useState('ALL');
   const [tempMinAge, setTempMinAge] = useState(16);
@@ -246,8 +335,23 @@ export default function App() {
             <div className="flex gap-6 h-[78vh] animate-in fade-in duration-500">
                <div className="w-[60%] flex flex-col bg-[#0d1117] border border-gray-800 rounded-[3rem] overflow-hidden shadow-2xl relative">
                   <div className="p-5 border-b border-gray-800 bg-[#161b22]/50 flex items-center gap-3"><div className="w-9 h-9 rounded-full bg-[#00ff88] flex items-center justify-center text-black shadow-lg"><Bot size={18}/></div><h3 className="text-[11px] font-black uppercase text-white italic">Live Scout AI</h3></div>
-                  <div className="flex-1 overflow-y-auto p-8 space-y-6 text-sm scrollbar-hide text-left text-gray-400">Salut! Am analizat ultimele meciuri. Iată ce profile de jucători s-ar potrivi sistemului U Cluj.</div>
-                  <div className="p-6 bg-[#161b22] border-t border-gray-800 flex gap-4"><input type="text" placeholder="Întreabă AI..." className="flex-1 bg-[#0d1117] border border-gray-800 rounded-2xl py-4 px-6 text-sm text-white focus:border-[#00ff88] outline-none" /><button className="bg-[#00ff88] text-black p-4 rounded-2xl"><Send size={20} /></button></div>
+                  <div className="flex-1 overflow-y-auto p-8 space-y-4 text-sm scrollbar-hide text-left">
+                    {chatMessages.map((msg, i) => (
+                      <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] px-5 py-3 rounded-2xl text-sm font-normal normal-case not-italic tracking-normal leading-relaxed whitespace-pre-wrap ${msg.role === 'user' ? 'bg-[#00ff88] text-black font-bold' : 'bg-[#161b22] border border-gray-800 text-gray-200'}`}>{msg.text}</div>
+                      </div>
+                    ))}
+                    {isChatLoading && (
+                      <div className="flex justify-start">
+                        <div className="bg-[#161b22] border border-gray-800 px-5 py-3 rounded-2xl text-gray-500 text-sm normal-case not-italic tracking-normal">Scrie...</div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+                  <div className="p-6 bg-[#161b22] border-t border-gray-800 flex gap-4">
+                    <input type="text" placeholder="Întreabă AI..." className="flex-1 bg-[#0d1117] border border-gray-800 rounded-2xl py-4 px-6 text-sm text-white focus:border-[#00ff88] outline-none normal-case not-italic tracking-normal" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMessage()} />
+                    <button onClick={sendMessage} disabled={isChatLoading} className="bg-[#00ff88] text-black p-4 rounded-2xl disabled:opacity-50 transition-opacity"><Send size={20} /></button>
+                  </div>
                </div>
             </div>
           )}
