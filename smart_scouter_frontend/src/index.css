@@ -1,0 +1,20 @@
+@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definirea culorilor pentru Tailwind v4 */
+@theme {
+  --color-ucluj-dark: #0d1117;
+  --color-ucluj-gray: #161b22;
+  --color-ucluj-green: #00ff88;
+}
+
+/* Stil de bază pentru fundal */
+@layer base {
+  body {
+    @apply bg-ucluj-dark text-white;
+    margin: 0;
+    font-family: sans-serif;
+  }
+}
