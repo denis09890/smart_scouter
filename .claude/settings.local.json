@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(& \"C:\\\\Users\\\\Dragos\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -c \"import fastapi, uvicorn, groq, dotenv; print\\('all deps ok'\\)\" 2>&1)"
-    ]
-  }
-}

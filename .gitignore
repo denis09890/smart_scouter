@@ -1,0 +1,29 @@
+# --- Frontend (React/Vite) ---
+node_modules/
+dist/
+.DS_Store
+
+# --- Backend (Python/AI) ---
+# Foldere de mediu și cache
+smart-scout-ai/venv/
+smart-scout-ai/__pycache__/
+venv/
+__pycache__/
+
+# --- DATE ȘI SECRETE (CRITIC!) ---
+# Ignorăm fișierele mari de date
+*.csv
+*.db
+*.gz
+smart-scout-ai/transfermarkt-datasets/
+smart-scout-ai/final_csv/
+
+# Ignorăm cheile și configurările private
+.env
+smart-scout-ai/.env
+gcp-key.json
+smart-scout-ai/gcp-key.json
+
+# --- IDE/Altele ---
+.vscode/
+.idea/
