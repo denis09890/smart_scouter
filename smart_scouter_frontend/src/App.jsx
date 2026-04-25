@@ -139,40 +139,8 @@ export default function App() {
   const [isHist, setIsHist] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedPlayerForReport, setSelectedPlayerForReport] = useState(null);
-  const [compareMode, setCompareMode] = useState('between');
-  const [playerToSave, setPlayerToSave] = useState(null);
-  const [moveCopyConfig, setMoveCopyConfig] = useState(null);
+  const [compareMode, setCompareMode] = useState('between'); // Fix pentru Compare Mode
 
-  const allPlayers = [
-    { id: 1, name: "CLAUDIU PETRILA", club: "CFR CLUJ", age: 23, position: "LW", countryCode: "RO", value: "3.5M €", match: 92, foot: "left", goals: 12, assists: 8, matchesPlayed: 28 },
-    { id: 2, name: "ABDUR AYUBA", club: "ACCRA LIONS", age: 19, position: "ST", countryCode: "GH", value: "800K €", match: 88, foot: "right", goals: 15, assists: 2, matchesPlayed: 20 },
-    { id: 5, name: "DARIUS OLARU", club: "FCSB", age: 26, position: "CM", countryCode: "RO", value: "6.5M €", match: 87, foot: "right", goals: 11, assists: 10, matchesPlayed: 31 },
-    { id: 6, name: "LOUIS MUNTEANU", club: "FARUL", age: 21, position: "CF", countryCode: "RO", value: "2.0M €", match: 84, foot: "both", goals: 10, assists: 3, matchesPlayed: 29 },
-    { id: 7, name: "ALEX MITRITA", club: "U CRAIOVA", age: 29, position: "LW", countryCode: "RO", value: "2.8M €", match: 90, foot: "right", goals: 14, assists: 11, matchesPlayed: 32 }
-  ];
-
-  const [player1Id, setPlayer1Id] = useState(1);
-  const [player2Id, setPlayer2Id] = useState(2);
-  const p1 = allPlayers.find(p => p.id === Number(player1Id)) || allPlayers[0];
-  const p2 = allPlayers.find(p => p.id === Number(player2Id)) || allPlayers[1];
-
-  const [folders, setFolders] = useState(() => {
-    const saved = localStorage.getItem('scout_folders');
-    return saved ? JSON.parse(saved) : ["Portari 2025", "Atacanți Centrali 2023", "Tineri Talente"];
-  });
-  const [selectedFolder, setSelectedFolder] = useState("ALL");
-  const [watchlistData, setWatchlistData] = useState(() => {
-    const saved = localStorage.getItem('scout_watchlist');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [folderSearch, setFolderSearch] = useState("");
-  const [isFolderListOpen, setIsFolderListOpen] = useState(false);
-  const [folderToDelete, setFolderToDelete] = useState(null);
-  const [newFolderMode, setNewFolderMode] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
-
-  // FILTRE STATE
   const [tempPos, setTempPos] = useState('ALL');
   const [tempMinAge, setTempMinAge] = useState(16);
   const [tempMaxAge, setTempMaxAge] = useState(40);
@@ -275,16 +243,11 @@ export default function App() {
           )}
           
           {tab==='ai' && (
-            <div className="flex gap-6 h-[78vh] animate-in fade-in duration-500 font-bold italic text-white uppercase italic">
-               <div className="w-[60%] flex flex-col bg-[#0d1117] border border-gray-800 rounded-[3rem] overflow-hidden shadow-2xl relative text-left uppercase font-black italic">
-                  <div className="p-5 border-b border-gray-800 bg-[#161b22]/50 flex items-center gap-3 text-white text-left font-bold font-bold italic text-white uppercase italic"><div className="w-9 h-9 rounded-full bg-[#00ff88] flex items-center justify-center text-black shadow-lg"><Bot size={18}/></div><h3 className="text-[11px] font-black uppercase text-white italic tracking-widest leading-none font-bold italic text-white uppercase italic">Live Scout AI</h3></div>
-                  <div className="flex-1 overflow-y-auto p-8 space-y-6 scrollbar-hide text-left text-sm text-gray-400 font-bold italic opacity-60">Sunt gata să analizez profile de jucători pentru U Cluj. Adaugă-i în colecții pentru a-i urmări.</div>
-                  <div className="p-6 bg-[#161b22] border-t border-gray-800 flex gap-4"><input type="text" placeholder="Întreabă AI..." className="flex-1 bg-[#0d1117] border border-gray-800 rounded-2xl py-4 px-6 text-sm text-white focus:border-[#00ff88] outline-none font-bold italic" /><button className="bg-[#00ff88] text-black p-4 rounded-2xl shadow-lg font-bold italic text-white uppercase italic"><Send size={20} /></button></div>
-               </div>
-               <div className="w-[40%] overflow-y-auto pr-2 scrollbar-hide grid grid-cols-2 gap-4 pb-10">
-                  {allPlayers.map(p => (
-                    <PlayerCard key={p.id} player={p} compact={true} isFavoriteDefault={watchlistData.some(i => i.player.id===p.id)} onFavoriteClick={setPlayerToSave} onOpenReport={setSelectedPlayerForReport} />
-                  ))}
+            <div className="flex gap-6 h-[78vh] animate-in fade-in duration-500">
+               <div className="w-[60%] flex flex-col bg-[#0d1117] border border-gray-800 rounded-[3rem] overflow-hidden shadow-2xl relative">
+                  <div className="p-5 border-b border-gray-800 bg-[#161b22]/50 flex items-center gap-3"><div className="w-9 h-9 rounded-full bg-[#00ff88] flex items-center justify-center text-black shadow-lg"><Bot size={18}/></div><h3 className="text-[11px] font-black uppercase text-white italic">Live Scout AI</h3></div>
+                  <div className="flex-1 overflow-y-auto p-8 space-y-6 text-sm scrollbar-hide text-left text-gray-400">Salut! Am analizat ultimele meciuri. Iată ce profile de jucători s-ar potrivi sistemului U Cluj.</div>
+                  <div className="p-6 bg-[#161b22] border-t border-gray-800 flex gap-4"><input type="text" placeholder="Întreabă AI..." className="flex-1 bg-[#0d1117] border border-gray-800 rounded-2xl py-4 px-6 text-sm text-white focus:border-[#00ff88] outline-none" /><button className="bg-[#00ff88] text-black p-4 rounded-2xl"><Send size={20} /></button></div>
                </div>
             </div>
           )}
