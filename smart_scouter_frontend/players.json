@@ -1,0 +1,14 @@
+{
+  "id": 1,
+  "nume": "Claudiu Petrila",
+  "club": "CFR Cluj",
+  "vârstă": 23,
+  "atribute": {
+    "viteza": 88,
+    "dribling": 84,
+    "pasare": 76,
+    "finalizare": 74
+  },
+  "cota_piata": "3M €",
+  "potrivire_ai": 92
+}
