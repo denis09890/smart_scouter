@@ -118,6 +118,38 @@ export default function App() {
   const [selectedPlayerForReport, setSelectedPlayerForReport] = useState(null);
   const [compareMode, setCompareMode] = useState('between'); // Fix pentru Compare Mode
 
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'ai', text: 'Salut! Am analizat ultimele meciuri. Iată ce profile de jucători s-ar potrivi sistemului U Cluj.' }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  const sendMessage = async () => {
+    const msg = chatInput.trim();
+    if (!msg || isChatLoading) return;
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', text: msg }]);
+    setIsChatLoading(true);
+    try {
+      const res = await fetch('http://localhost:8000/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg }),
+      });
+      const data = await res.json();
+      setChatMessages(prev => [...prev, { role: 'ai', text: data.response }]);
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'ai', text: 'Eroare: nu pot contacta serverul AI. Asigură-te că backend-ul rulează.' }]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
   const [tempPos, setTempPos] = useState('ALL');
   const [tempMinAge, setTempMinAge] = useState(16);
   const [tempMaxAge, setTempMaxAge] = useState(40);
@@ -180,8 +212,19 @@ export default function App() {
             <div className="flex gap-6 h-[78vh] animate-in fade-in duration-500">
                <div className="w-[60%] flex flex-col bg-[#0d1117] border border-gray-800 rounded-[3rem] overflow-hidden shadow-2xl relative">
                   <div className="p-5 border-b border-gray-800 bg-[#161b22]/50 flex items-center gap-3"><div className="w-9 h-9 rounded-full bg-[#00ff88] flex items-center justify-center text-black shadow-lg"><Bot size={18}/></div><h3 className="text-[11px] font-black uppercase text-white italic">Live Scout AI</h3></div>
-                  <div className="flex-1 overflow-y-auto p-8 space-y-6 text-sm scrollbar-hide text-left text-gray-400">Salut! Am analizat ultimele meciuri. Iată ce profile de jucători s-ar potrivi sistemului U Cluj.</div>
-                  <div className="p-6 bg-[#161b22] border-t border-gray-800 flex gap-4"><input type="text" placeholder="Întreabă AI..." className="flex-1 bg-[#0d1117] border border-gray-800 rounded-2xl py-4 px-6 text-sm text-white focus:border-[#00ff88] outline-none" /><button className="bg-[#00ff88] text-black p-4 rounded-2xl"><Send size={20} /></button></div>
+                  <div className="flex-1 overflow-y-auto p-8 space-y-4 scrollbar-hide text-left">
+                    {chatMessages.map((m, i) => (
+                      <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] rounded-2xl px-5 py-3 text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-[#00ff88] text-black font-bold' : 'bg-[#161b22] text-gray-300 border border-gray-800'}`}>{m.text}</div>
+                      </div>
+                    ))}
+                    {isChatLoading && <div className="flex justify-start"><div className="bg-[#161b22] border border-gray-800 rounded-2xl px-5 py-3 text-gray-500 text-sm italic">Scout AI scrie...</div></div>}
+                    <div ref={chatEndRef} />
+                  </div>
+                  <div className="p-6 bg-[#161b22] border-t border-gray-800 flex gap-4">
+                    <input type="text" placeholder="Întreabă AI..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()} className="flex-1 bg-[#0d1117] border border-gray-800 rounded-2xl py-4 px-6 text-sm text-white focus:border-[#00ff88] outline-none" />
+                    <button onClick={sendMessage} disabled={isChatLoading} className="bg-[#00ff88] text-black p-4 rounded-2xl disabled:opacity-50 hover:scale-105 active:scale-95 transition-all"><Send size={20} /></button>
+                  </div>
                </div>
                <div className="w-[40%] overflow-y-auto pr-2 scrollbar-hide pb-10 grid grid-cols-2 gap-4">{players.slice(0, 4).map(p => <PlayerCard key={p.id} player={p} compact={true} isFavoriteDefault={false} onOpenReport={setSelectedPlayerForReport} />)}</div>
             </div>
