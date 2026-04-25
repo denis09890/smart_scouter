@@ -1,0 +1,12 @@
+# Baze de date și fișiere mari
+*.db
+*.csv
+*.gz
+final_csv/
+transfermarkt-datasets/
+
+# Mediu virtual și secrete
+venv/
+.env
+__pycache__/
+gcp-key.json
