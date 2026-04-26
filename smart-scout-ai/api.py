@@ -1,13 +1,17 @@
 import os
 import json as json_lib
+import sqlite3
+import httpx
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from scout_agent import ScoutAgent
 from database import (
     search_players_for_ui, get_players_ui_by_ids,
     get_player_report_data, _calc_player_attributes, _calc_overall,
+    DB_PATH,
 )
 
 load_dotenv()
@@ -23,6 +27,42 @@ app.add_middleware(
 
 agent = ScoutAgent()
 
+_IMAGE_CACHE: dict[int, bytes] = {}
+
+@app.get("/player-image/{player_id}")
+async def player_image(player_id: int):
+    if player_id in _IMAGE_CACHE:
+        return Response(content=_IMAGE_CACHE[player_id], media_type="image/jpeg")
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT image_url FROM players WHERE player_id = ?", (player_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row or not row[0] or str(row[0]) in ("", "nan"):
+        return Response(status_code=404)
+
+    image_url = str(row[0])
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            resp = await client.get(
+                image_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    "Referer": "https://www.transfermarkt.com/",
+                    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                },
+            )
+        if resp.status_code == 200:
+            content = resp.content
+            _IMAGE_CACHE[player_id] = content
+            ct = resp.headers.get("content-type", "image/jpeg")
+            return Response(content=content, media_type=ct)
+    except Exception:
+        pass
+    return Response(status_code=404)
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -30,8 +70,13 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
-    response, player_ids = agent.ask(req.message)
-    players_ui = get_players_ui_by_ids(player_ids) if player_ids else []
+    response, player_ids, players_direct = agent.ask(req.message)
+    # players_direct vine din căutarea parametrică (deja formatați, sortați după match%)
+    # player_ids vine din căutarea clasică după nume (trebuie re-fetch din DB)
+    if players_direct:
+        players_ui = players_direct
+    else:
+        players_ui = get_players_ui_by_ids(player_ids) if player_ids else []
     return {"response": response, "players": players_ui}
 
 
