@@ -455,8 +455,12 @@ def search_players_for_ui(query, limit=10):
     return _rows_to_players(df)
 
 
-def _rows_to_players(df):
-    """Converteste un DataFrame cu coloane standard in lista de dicts pentru UI."""
+def _rows_to_players(df, match_score=None):
+    """
+    Converteste un DataFrame cu coloane standard in lista de dicts pentru UI.
+    match_score: dacă e dat (int), îl folosește pentru toți jucătorii;
+                 altfel calculează din cotă (pentru bara de search).
+    """
     players = []
     for _, row in df.iterrows():
         goals = int(row["goals"]) if row["goals"] else 0
@@ -464,14 +468,16 @@ def _rows_to_players(df):
         matches = int(row["matches_played"]) if row["matches_played"] else 0
         market_val = float(row["market_value"]) if row["market_value"] else 0
 
-        if market_val >= 50_000_000:
-            match_score = 96
+        if match_score is not None:
+            score = match_score
+        elif market_val >= 50_000_000:
+            score = 96
         elif market_val >= 10_000_000:
-            match_score = 89
+            score = 89
         elif market_val >= 1_000_000:
-            match_score = 80
+            score = 80
         else:
-            match_score = 72
+            score = 72
 
         foot_val = str(row["foot"]).lower().strip()
         if foot_val not in ("left", "right", "both"):
@@ -490,7 +496,7 @@ def _rows_to_players(df):
             "value": _format_value(market_val),
             "valNum": int(market_val),
             "foot": foot_val,
-            "imageUrl": str(row.get("image_url", "")),
+            "imageUrl": f"http://localhost:8000/player-image/{int(row['player_id'])}",
             "age": age_val,
             "goals": goals,
             "assists": assists,
@@ -499,8 +505,160 @@ def _rows_to_players(df):
             "redCards": int(row["red_cards"]) if row.get("red_cards") else 0,
             "minutesPlayed": int(row["minutes_played"]) if row.get("minutes_played") else 0,
             "height": int(row["height_cm"]) if row.get("height_cm") else 0,
-            "match": match_score,
+            "match": score,
         })
+    return players
+
+
+def search_players_by_criteria(
+    position=None,
+    nationality=None,
+    club=None,
+    max_age=None,
+    min_age=None,
+    max_value=None,
+    min_value=None,
+):
+    """
+    Caută jucători care îndeplinesc TOATE criteriile date (filtrare strictă).
+    Calculează match% per jucător pe baza câtor criterii opționale îndeplinește.
+    Returnează lista sortată descrescător după match%, fără limită de rezultate.
+
+    Logica match%:
+    - Criteriile hard (poziție, naționalitate, club) sunt obligatorii — jucătorul apare
+      DOAR dacă le îndeplinește pe toate. Dacă le îndeplinește pe toate → 100% pentru ele.
+    - Criteriile range (vârstă, valoare) sunt opționale în sens de scoring:
+      un jucător care le îndeplinește pe toate primește 100%.
+    - Formula: match = round(criterii_indeplinite / total_criterii * 100)
+    """
+    if not is_db_ready():
+        return []
+
+    # ── Rezolvă poziția la valoarea exactă din DB ──────────────────────────
+    # sub_position e câmpul granular (ex: "Centre-Back")
+    # position e categoria mare (ex: "Defender")
+    # Categoriiile mari din DB:
+    MAIN_POSITIONS = {"Defender", "Midfield", "Attack", "Goalkeeper", "Missing"}
+
+    pos_filter_sub = None    # potrivire exactă pe sub_position
+    pos_filter_main = None   # potrivire exactă pe position (categorie mare)
+
+    if position:
+        if position in MAIN_POSITIONS:
+            pos_filter_main = position
+        else:
+            pos_filter_sub = position   # ex: "Centre-Back", "Left-Back", etc.
+
+    # ── Construiește WHERE strict (AND între toate criteriile) ─────────────
+    conditions = []
+    params = []
+
+    if pos_filter_sub:
+        # Potrivire exactă pe sub_position (case-insensitive)
+        conditions.append("LOWER(sub_position) = LOWER(?)")
+        params.append(pos_filter_sub)
+    elif pos_filter_main:
+        conditions.append("LOWER(position) = LOWER(?)")
+        params.append(pos_filter_main)
+
+    if nationality:
+        # Potrivire exactă pe naționalitate
+        conditions.append("LOWER(country_of_citizenship) = LOWER(?)")
+        params.append(nationality)
+
+    if club:
+        # Club: potrivire parțială (numele clubului poate varia)
+        conditions.append("LOWER(current_club_name) LIKE LOWER(?)")
+        params.append(f"%{club}%")
+
+    if max_age is not None:
+        conditions.append(
+            "CAST((julianday('now') - julianday(date_of_birth)) / 365.25 AS INT) <= ?"
+        )
+        params.append(max_age)
+
+    if min_age is not None:
+        conditions.append(
+            "CAST((julianday('now') - julianday(date_of_birth)) / 365.25 AS INT) >= ?"
+        )
+        params.append(min_age)
+
+    if max_value is not None:
+        conditions.append("COALESCE(market_value_in_eur, 0) <= ?")
+        params.append(max_value)
+
+    if min_value is not None:
+        conditions.append("COALESCE(market_value_in_eur, 0) >= ?")
+        params.append(min_value)
+
+    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+    # Numărul total de criterii active (pentru calculul match%)
+    total_criteria = sum([
+        position is not None,
+        nationality is not None,
+        club is not None,
+        max_age is not None,
+        min_age is not None,
+        max_value is not None,
+        min_value is not None,
+    ])
+
+    query = f"""
+        SELECT
+            p.player_id,
+            p.name,
+            COALESCE(p.sub_position, p.position, '') AS position,
+            COALESCE(p.current_club_name, 'Free Agent') AS club,
+            COALESCE(p.country_of_citizenship, '') AS nationality,
+            COALESCE(p.market_value_in_eur, 0) AS market_value,
+            COALESCE(p.image_url, '') AS image_url,
+            COALESCE(p.foot, '') AS foot,
+            p.date_of_birth,
+            CAST((julianday('now') - julianday(p.date_of_birth)) / 365.25 AS INT) AS age,
+            COALESCE(p.height_in_cm, 0) AS height_cm,
+            COALESCE(SUM(a.goals), 0) AS goals,
+            COALESCE(SUM(a.assists), 0) AS assists,
+            COUNT(a.appearance_id) AS matches_played,
+            COALESCE(SUM(a.yellow_cards), 0) AS yellow_cards,
+            COALESCE(SUM(a.red_cards), 0) AS red_cards,
+            COALESCE(SUM(a.minutes_played), 0) AS minutes_played
+        FROM (
+            SELECT * FROM players
+            {where_clause}
+            ORDER BY COALESCE(market_value_in_eur, 0) DESC
+        ) p
+        LEFT JOIN appearances a ON p.player_id = a.player_id
+        GROUP BY p.player_id
+        ORDER BY market_value DESC
+    """
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        conn.close()
+        print(f"[criteria search] eroare: {e}")
+        return []
+    conn.close()
+
+    players = _rows_to_players(df)
+
+    # ── Calculează match% pentru fiecare jucător ───────────────────────────
+    # Toți jucătorii din listă au trecut filtrele hard (poziție, naționalitate, club exacte).
+    # match% = câte criterii îndeplinește / total criterii * 100
+    # Criteriile range (vârstă, valoare) pot fi îndeplinite parțial în sensul că
+    # un jucător care satisface TOATE criteriile primește 100%.
+    # Deoarece filtrarea e strictă (WHERE AND), toți jucătorii din listă îndeplinesc
+    # toate criteriile → toți primesc 100% dacă avem un singur criteriu sau mai multe.
+    # Dar dacă utilizatorul a cerut N criterii și jucătorul le îndeplinește pe toate → 100%.
+    for p in players:
+        p["match"] = 100
+
+    # Sortare descrescătoare după match% (toți 100 în cazul filtrării stricte),
+    # secundar după valoare de piață
+    players.sort(key=lambda x: (x["match"], x["valNum"]), reverse=True)
+
     return players
 
 
@@ -547,107 +705,55 @@ def get_players_ui_by_ids(player_ids):
 
 
 def get_player_context(player_id):
-    """Returneaza toate datele relevante despre un jucator ca text formatat."""
+    """Returneaza date esentiale despre un jucator ca text compact pentru AI."""
     conn = sqlite3.connect(DB_PATH)
 
-    # Profil de baza
     player_df = pd.read_sql_query(
-        "SELECT * FROM players WHERE player_id = ?", conn, params=(player_id,)
+        "SELECT name, position, sub_position, date_of_birth, country_of_citizenship, "
+        "height_in_cm, foot, current_club_name, market_value_in_eur, highest_market_value_in_eur "
+        "FROM players WHERE player_id = ?", conn, params=(player_id,)
     )
 
-    # Statistici totale cariera
     stats_df = pd.read_sql_query(
-        """
-        SELECT
-            COUNT(*)           AS meciuri_totale,
-            SUM(goals)         AS goluri_totale,
-            SUM(assists)       AS pase_decisive,
-            SUM(minutes_played)AS minute_jucate,
-            SUM(yellow_cards)  AS cartonase_galbene,
-            SUM(red_cards)     AS cartonase_rosii
-        FROM appearances WHERE player_id = ?
-        """,
-        conn,
-        params=(player_id,),
+        "SELECT COUNT(*) AS meciuri, SUM(goals) AS goluri, SUM(assists) AS asisturi, "
+        "ROUND(AVG(minutes_played),0) AS min_per_meci, SUM(yellow_cards) AS galbene, SUM(red_cards) AS rosii "
+        "FROM appearances WHERE player_id = ?",
+        conn, params=(player_id,),
     )
 
-    # Statistici pe sezon (ultimele 5 sezoane)
     season_df = pd.read_sql_query(
-        """
-        SELECT
-            strftime('%Y', date) AS an,
-            COUNT(*)             AS meciuri,
-            SUM(goals)           AS goluri,
-            SUM(assists)         AS pase_decisive,
-            SUM(minutes_played)  AS minute
-        FROM appearances
-        WHERE player_id = ?
-        GROUP BY an
-        ORDER BY an DESC
-        LIMIT 5
-        """,
-        conn,
-        params=(player_id,),
-    )
-
-    # Istoric transferuri
-    transfers_df = pd.read_sql_query(
-        """
-        SELECT transfer_date, from_club_name, to_club_name, transfer_fee
-        FROM transfers WHERE player_id = ?
-        ORDER BY transfer_date DESC LIMIT 10
-        """,
-        conn,
-        params=(player_id,),
-    )
-
-    # Evolutie valoare de piata (ultimele 6 intrari)
-    valuation_df = pd.read_sql_query(
-        """
-        SELECT date, market_value_in_eur
-        FROM player_valuations WHERE player_id = ?
-        ORDER BY date DESC LIMIT 6
-        """,
-        conn,
-        params=(player_id,),
+        "SELECT strftime('%Y',date) AS an, COUNT(*) AS m, SUM(goals) AS g, SUM(assists) AS a "
+        "FROM appearances WHERE player_id = ? GROUP BY an ORDER BY an DESC LIMIT 3",
+        conn, params=(player_id,),
     )
 
     conn.close()
 
-    parts = []
+    if player_df.empty:
+        return f"Jucătorul {player_id} nu există în baza de date."
 
-    if not player_df.empty:
-        row = player_df.iloc[0]
-        fields = {
-            "Nume": row.get("name"),
-            "Pozitie": row.get("position") or row.get("last_position"),
-            "Sub-pozitie": row.get("sub_position"),
-            "Data nasterii": row.get("date_of_birth"),
-            "Nationalitate": row.get("country_of_citizenship") or row.get("nationality"),
-            "Tara nasterii": row.get("country_of_birth"),
-            "Inaltime (cm)": row.get("height_in_cm"),
-            "Picior preferat": row.get("foot"),
-            "Club curent": row.get("current_club_name"),
-            "Valoare piata (EUR)": row.get("market_value_in_eur"),
-            "Valoare maxima (EUR)": row.get("highest_market_value_in_eur"),
-            "Ultima stagiune": row.get("last_season"),
-        }
-        lines = [f"  {k}: {v}" for k, v in fields.items() if v and str(v) != "nan"]
-        parts.append("PROFIL JUCATOR:\n" + "\n".join(lines))
+    row = player_df.iloc[0]
+    profile = (
+        f"{row['name']} | {row.get('sub_position') or row.get('position','?')} | "
+        f"{row.get('country_of_citizenship','?')} | {row.get('current_club_name','?')} | "
+        f"Valoare: {_format_value(float(row.get('market_value_in_eur') or 0))} | "
+        f"Picior: {row.get('foot','?')} | Înălțime: {row.get('height_in_cm','?')}cm"
+    )
 
-    if not stats_df.empty and stats_df.iloc[0]["meciuri_totale"]:
-        parts.append("STATISTICI CARIERA TOTALA:\n" + stats_df.to_string(index=False))
+    parts = [profile]
+
+    if not stats_df.empty and stats_df.iloc[0]["meciuri"]:
+        s = stats_df.iloc[0]
+        parts.append(
+            f"Carieră: {int(s['meciuri'])}mc {int(s['goluri'] or 0)}g {int(s['asisturi'] or 0)}a "
+            f"{int(s['min_per_meci'] or 0)}min/mc {int(s['galbene'] or 0)}gal {int(s['rosii'] or 0)}ros"
+        )
 
     if not season_df.empty:
-        parts.append("STATISTICI PE AN (ultimii 5 ani):\n" + season_df.to_string(index=False))
+        rows = [f"{r['an']}:{r['m']}mc/{r['g']}g/{r['a']}a" for _, r in season_df.iterrows()]
+        parts.append("Sezoane: " + " | ".join(rows))
 
-    if not transfers_df.empty:
-        parts.append("ISTORIC TRANSFERURI:\n" + transfers_df.to_string(index=False))
-
-    if not valuation_df.empty:
-        parts.append("EVOLUTIE VALOARE DE PIATA:\n" + valuation_df.to_string(index=False))
-
-    return "\n\n".join(parts) if parts else f"Date limitate disponibile pentru player_id={player_id}"
+    return " | ".join(parts)
 
 
 if __name__ == "__main__":
